@@ -1,5 +1,5 @@
 ﻿# Developed by Stian Kvia - Customer Support UA
-$Updated = "09.07.2024"
+$Updated = "30.07.2024"
 
 # Beginning of Script
 Write-host "Beginning of PowerShell Script" -ForegroundColor Green
@@ -24,11 +24,10 @@ if ($confirmation -eq "Y" -or $confirmation -eq "y") {
 Write-host ""
 Write-host "Information" -ForegroundColor Yellow
 Write-host "This script will prompt for the Name and Email to the Shared Mailbox"
-Write-host "Then open a CSV where you will have to enter their email"
+Write-host "Then open a CSV where you will have to enter their firstname and lastname"
 Write-host ""
 Write-host "Remember to Save the notepad document with Ctrl+S" -ForegroundColor Yellow
-Write-host "If there is any errors (red) you can use GiveAccess command for those users"
-Write-host "Or you can manually check their access via Exchange Online"
+Write-host "If the user is not found it will ask you to manually input the email to the user"
 Write-host ""
 
 # Gather Information
@@ -44,8 +43,8 @@ $csvPath = "$env:TEMP\users.csv"
 
 # Create the CSV content
 $csvContent = @"
-Email
-user@domain.com
+Name
+Firstname Lastname
 "@ 
 
 # Write the CSV content to a file
@@ -69,20 +68,52 @@ Pause
 Write-host ""
 
 # Read the CSV file
-$emails = Import-Csv -Path $csvPath
+$users = Import-Csv -Path $csvPath
 
-# Grant FullAccess and SendAs permissions for each email address
-foreach ($email in $emails) {
-    $user = $email.email
+# Loop through each user in the CSV
+foreach ($user in $users) {
+    $name = $user.Name
 
-    # Grant FullAccess permission
-    Add-MailboxPermission -Identity $SharedMailbox -User $user -AccessRights FullAccess -Confirm:$false
-    Write-Host "Granted FullAccess to $user on $SharedMailbox"
+    # Search for the user in Exchange Online
+    $recipient = Get-Recipient -Filter "Name -like '*$name*'"
+    
+    if ($recipient -ne $null) {
+        Write-Host "User with name '$name' found."
 
-    # Grant SendAs permission
-    Add-RecipientPermission $SharedMailbox -AccessRights SendAs -Trustee $user -Confirm:$false
-    Write-Host "Granted SendAs Access to $user on $SharedMailbox"
-    Write-Host ""
+        # Confirm access before adding user to the shared mailbox
+        $confirmation = Read-Host "Do you want to grant access to $name? (Y/N)"
+
+        if ($confirmation -eq "Y" -or $confirmation -eq "y") {
+            # Get the email address of the user
+            $email = $recipient.PrimarySmtpAddress
+
+            # Add user to the shared mailbox
+            Add-MailboxPermission -Identity $SharedMailbox -User "$email" -AccessRights FullAccess -Confirm:$false
+            Write-Host "Access granted to $name ($email)."
+
+            Add-RecipientPermission $SharedMailbox -AccessRights SendAs -Trustee "$email" -Confirm:$false
+            Write-Host "Granted SendAs Access to $user on $sharedMailbox"
+            Write-host ""
+
+        } else {
+            Write-Host "Access not granted to $name."
+            Write-host ""
+        }
+    } else {
+        Write-Host "User with name '$name' not found in Exchange Online."
+        
+        # Prompt for email address
+        $email = Read-Host "Enter the email address for $name"
+        
+        # Add user to the shared mailbox with the provided email address
+        Add-MailboxPermission -Identity $SharedMailbox -User "$email" -AccessRights FullAccess -Confirm:$false
+        Write-Host "Access granted to $name ($email)."
+        
+        # Add SendAs permission to the user on the shared mailbox with the provided email address
+        Add-RecipientPermission $SharedMailbox -AccessRights SendAs -Trustee "$email" -Confirm:$false
+        Write-Host "Granted SendAs Access to $email on $sharedMailbox"
+        Write-host ""
+    }
 }
 
 # Define the GiveAccess function
