@@ -235,14 +235,25 @@ foreach ($user in $disabledUsers) {
     $lines = $repadminOutput -split "`n"
     $userAccountControlLine = $lines | Where-Object { $_ -match "userAccountControl" }
 
+# UPDATE 31.10.24 _ Replace due to object duplication issues if there is multiple DC with different dates
     if ($userAccountControlLine) {
-        # Extract the date from the line
-        # Split the line by whitespace
-        $parts = $userAccountControlLine -split "\s+"
+        # Parse the date from the lines and sort by the date
+        $sortedUserAccountControlLine = $userAccountControlLine | ForEach-Object {
+            $parts = $_ -split "\s+"
+            $dateString = $parts | Where-Object { $_ -match '^\d{4}-\d{2}-\d{2}$' }
+            $timeString = $parts | Where-Object { $_ -match '^\d{2}:\d{2}:\d{2}$' }
+            [pscustomobject]@{
+                Line = $_
+                DateTime = [datetime]::ParseExact("$dateString $timeString", 'yyyy-MM-dd HH:mm:ss', $null)
+            }
+        } | Sort-Object DateTime -Descending
+        
+        # Get the most recent entry
+        $mostRecentUserAccountControlLine = $sortedUserAccountControlLine | Select-Object -First 1
         
         # Extract the date and time parts
-        $dateString = $parts | Where-Object { $_ -match '^\d{4}-\d{2}-\d{2}$' }
-        $timeString = $parts | Where-Object { $_ -match '^\d{2}:\d{2}:\d{2}$' }   
+        $dateString = $mostRecentUserAccountControlLine.Line -split "\s+" | Where-Object { $_ -match '^\d{4}-\d{2}-\d{2}$' }
+        $timeString = $mostRecentUserAccountControlLine.Line -split "\s+" | Where-Object { $_ -match '^\d{2}:\d{2}:\d{2}$' }
         
         # Combine date and time into a single string
         $dateTimeString = "$dateString $timeString"
